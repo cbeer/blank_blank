@@ -36,11 +36,12 @@ ARGV.each do |repo|
             begin
               fail "Unexpected gem output: #{gem_build_output}" if gem_name.nil? || gem_version.nil?
 
-              `gem unpack #{gem_name} -v #{gem_version} --target #{dir}/#{gem_name}-#{gem_version}-rubygems`
-              `gem unpack #{gem_file} --target #{dir}/#{gem_name}-#{gem_version}-newly-built`
+              output = ""
+              output += `gem unpack #{gem_name} -v #{gem_version} --target #{dir}/#{gem_name}-#{gem_version}-rubygems 2>&1`
+              output += `gem unpack #{gem_file} --target #{dir}/#{gem_name}-#{gem_version}-newly-built 2>&1`
 
-              diff_output = `diff -r #{dir}/#{gem_name}-#{gem_version}-rubygems #{dir}/#{gem_name}-#{gem_version}-newly-built`
-              fail diff_output unless $CHILD_STATUS == 0
+              output +=  `diff -r #{dir}/#{gem_name}-#{gem_version}-rubygems #{dir}/#{gem_name}-#{gem_version}-newly-built`
+              fail output unless $? == 0
 
               puts "#{gem_name} #{gem_version}: [ OK ]"
             rescue => e
