@@ -14,12 +14,14 @@ OptionParser.new do |opts|
   end
 end.parse!
 
+@errors = 0
+
 ARGV.each do |repo|
   $stderr.puts "#{repo}"
 
   Dir.mktmpdir do |dir|
     Dir.chdir(dir) do
-      puts `git clone #{repo} repo 2>&1`
+      $stderr.puts `git clone #{repo} repo 2>&1`
 
       Dir.chdir('repo') do
         g = Git.open(Dir.pwd)
@@ -45,6 +47,7 @@ ARGV.each do |repo|
 
               puts "#{gem_name} #{gem_version}: [ OK ]"
             rescue => e
+              @errors += 1
               puts "#{gem_name} #{gem_version}: [ FAIL ]"
               puts e.message
             end
@@ -54,3 +57,5 @@ ARGV.each do |repo|
     end
   end
 end
+
+exit 1 if @errors > 0
