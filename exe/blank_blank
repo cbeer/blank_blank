@@ -3,7 +3,7 @@
 require "tmpdir"
 require "optparse"
 require "blank_blank"
-require 'git'
+require 'fileutils'
 
 options = {}
 OptionParser.new do |opts|
@@ -17,40 +17,36 @@ end.parse!
 @errors = 0
 
 ARGV.each do |repo|
-  $stderr.puts "#{repo}"
+  repository = BlankBlank::GitRepository.new(repo)
 
-  Dir.mktmpdir do |dir|
-    Dir.chdir(dir) do
-      $stderr.puts `git clone #{repo} repo 2>&1`
+  repository.within_temporary_clone do |repository|
+    repository.tags.sort_by(&:name).each do |tag|
+      repository.checkout(tag)
 
-      Dir.chdir('repo') do
-        g = Git.open(Dir.pwd)
-        g.tags.sort_by(&:name).each do |tag|
-          g.checkout(tag)
+      repository.chdir do
+        Dir.glob('*.gemspec') do |gemspec|
+          dir = Dir.mktmpdir
 
-          Dir.glob('*.gemspec') do |gemspec|
-            gem_build_output = `gem build #{gemspec} -f 2>&1`
+          gem_build_output = `gem build #{gemspec} -f 2>&1`
+          data = gem_build_output.scan(/\s+(.*):\s+(.*)/).to_h.merge(output: gem_build_output)
 
-            gem_name = gem_build_output.scan(/Name: (.*)/).flatten.first
-            gem_version = gem_build_output.scan(/Version: (.*)/).flatten.first
-            gem_file = gem_build_output.scan(/File: (.*)/).flatten.first
+          begin
+            fail "Unexpected gem output: #{data[:output]}" if data['Name'].nil? || data['Version'].nil?
 
-            begin
-              fail "Unexpected gem output: #{gem_build_output}" if gem_name.nil? || gem_version.nil?
+            output = ""
+            output += `gem unpack #{data['Name']} -v #{data['Version']} --target #{dir}/#{data['Name']}-#{data['Version']}-rubygems 2>&1` 
+            output += `gem unpack #{repository.dir}/#{data['File']} --target #{dir}/#{data['Name']}-#{data['Version']}-newly-built 2>&1`
 
-              output = ""
-              output += `gem unpack #{gem_name} -v #{gem_version} --target #{dir}/#{gem_name}-#{gem_version}-rubygems 2>&1`
-              output += `gem unpack #{gem_file} --target #{dir}/#{gem_name}-#{gem_version}-newly-built 2>&1`
+            output +=  `diff -r #{dir}/#{data['Name']}-#{data['Version']}-rubygems #{dir}/#{data['Name']}-#{data['Version']}-newly-built`
+            fail output unless $? == 0
 
-              output +=  `diff -r #{dir}/#{gem_name}-#{gem_version}-rubygems #{dir}/#{gem_name}-#{gem_version}-newly-built`
-              fail output unless $? == 0
-
-              puts "#{gem_name} #{gem_version}: [ OK ]"
-            rescue => e
-              @errors += 1
-              puts "#{gem_name} #{gem_version}: [ FAIL ]"
-              puts e.message
-            end
+            puts "#{data['Name']} #{data['Version']}: [ OK ]"
+          rescue => e
+            @errors += 1
+            puts "#{data['Name']} #{data['Version']}: [ FAIL ]"
+            puts e.message
+          ensure
+            FileUtils.remove_entry dir
           end
         end
       end
